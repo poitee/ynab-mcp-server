@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { createMcpHarness, assertToolOk } from "./support/mcp-harness.mjs";
 
 process.env.YNAB_MCP_NO_AUTOSTART = "1";
 process.env.YNAB_DISABLE_AGENT_CONFIG_FALLBACK = "1";
@@ -150,7 +151,31 @@ test("a multi-month analytics window refreshes with one delta, not one request p
   assert.equal(reads[0].query.until_date, "2026-06-30");
   assert.equal(reads[0].query.last_knowledge_of_server, undefined);
   assert.equal(reads[1].query.last_knowledge_of_server, "99");
+  assert.equal(reads[1].query.since_date, undefined);
+  assert.equal(reads[1].query.until_date, undefined);
   assert.equal(fake.requests.filter((request) => /\/months\/\d{4}-\d{2}-01\/transactions$/.test(request.path)).length, 0);
+});
+
+test("bounded delta drops a transaction whose date leaves the window", async (t) => {
+  const h = await createMcpHarness({ cacheTtlMs: 0, writesEnabled: false });
+  t.after(() => h.close());
+  const args = {
+    sinceDate: "2026-10-01", untilDate: "2026-10-13",
+    incomeCategoryIds: ["fake-income"],
+  };
+  const before = assertToolOk(await h.call("get_income_expense_summary", args));
+  assert.equal(before.totals.spending, 27);
+  h.fake.mutateTransaction("fake-import", { date: "2026-09-30" });
+  const refreshed = assertToolOk(await h.call("get_income_expense_summary", args));
+  const delta = h.fake.requests.filter((request) => request.path.endsWith("/transactions")).at(-1);
+  assert.equal(delta.query.last_knowledge_of_server, "10");
+  assert.equal(h.fake.writes().length, 0);
+  h.instance.internals.entityCache.invalidate();
+  const baseline = assertToolOk(await h.call("get_income_expense_summary", args));
+  assert.equal(baseline.totals.spending, 15);
+  assert.deepEqual(refreshed.totals, baseline.totals);
+  assert.equal(delta.query.since_date, undefined);
+  assert.equal(delta.query.until_date, undefined);
 });
 
 test("spending trends clamps the window to the budget first month", async (t) => {

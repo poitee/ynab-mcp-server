@@ -76,7 +76,8 @@ calendar months preceding this month, clamped so the window does not start
 before the budget's first month. A window that falls entirely before that
 month is empty. It accepts at most 36 calendar months. The history read is one
 bounded transaction request, reused from the session cache and refreshed with
-one delta.
+one delta. That delta is not date-filtered. The window is applied after the
+merge, so a transaction whose date leaves the window drops out of the totals.
 
 The tool rejects a future end date. Completeness is bounded by today's date in
 the pure helper too, so a caller's month-end bound cannot turn a current partial

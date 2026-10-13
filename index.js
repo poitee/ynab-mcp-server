@@ -1256,9 +1256,21 @@ async function fetchTransactions({
       scope: JSON.stringify([transactionPath, type ?? null, boundedHistory ? "bounded" : "complete"]),
       // Filtered endpoint deltas can omit a row that moved out of that scope.
       // Replacing its full scoped baseline avoids retained stale membership.
+      // A bounded date window has the same hole: since_date/until_date on the
+      // delta hide a row whose date left the window, and the merge keeps the
+      // old in-window copy. The baseline stays windowed; the delta asks for
+      // every change and the local filter below applies the window.
       deltaSupported: !hasResourceFilter && !effectiveMonth && !type,
       coverage,
-      load: (cursor, coverage) => ynabFetch(transactionPath, { query: { since_date: effectiveMonth ? undefined : coverage.since_date, until_date: boundedHistory ? coverage.until_date : undefined, type, last_knowledge_of_server: cursor } }),
+      load: (cursor, windowCoverage) => {
+        const boundedDelta = boundedHistory && cursor != null;
+        return ynabFetch(transactionPath, { query: {
+          since_date: effectiveMonth || boundedDelta ? undefined : windowCoverage.since_date,
+          until_date: boundedHistory && !boundedDelta ? windowCoverage.until_date : undefined,
+          type,
+          last_knowledge_of_server: cursor,
+        } });
+      },
     });
     data.transactions = data.transactions.filter((row) => (!effectiveSinceDate || row.date >= effectiveSinceDate) && (!effectiveUntilDate || row.date <= effectiveUntilDate));
     data.freshness.returned_range = { since_date: effectiveSinceDate ?? null, until_date: effectiveUntilDate ?? null, type: type ?? null };
