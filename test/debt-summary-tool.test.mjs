@@ -18,7 +18,7 @@ const accounts = [
     balance: -2009670,
     cleared_balance: -1500000,
     uncleared_balance: -509670,
-    debt_interest_rates: { "2026-01-01": 19.99 },
+    debt_interest_rates: { "2026-01-01": 18990 },
     debt_minimum_payments: { "2026-01-01": 35000 },
     debt_escrow_amounts: null,
     note: null,
@@ -31,7 +31,7 @@ const accounts = [
     closed: false,
     deleted: false,
     balance: -5000,
-    debt_interest_rates: { "2024-01-01": 4, "2026-01-01": 6, "2099-01-01": 99 },
+    debt_interest_rates: { "2024-01-01": 4000, "2026-01-01": 6000, "2099-01-01": 99000 },
     debt_minimum_payments: { "2026-01-01": 1000 },
     debt_escrow_amounts: { "2026-01-01": 250 },
   },
@@ -43,11 +43,11 @@ const accounts = [
     closed: false,
     deleted: false,
     balance: -1000,
-    debt_interest_rates: { "2026-01-01": 6 },
+    debt_interest_rates: { "2026-01-01": 6000 },
     debt_minimum_payments: null,
     debt_escrow_amounts: null,
   },
-  { id: "mortgage-old", name: "Old Mortgage", type: "mortgage", closed: true, deleted: false, balance: -100, debt_interest_rates: { "2020-01-01": 3 } },
+  { id: "mortgage-old", name: "Old Mortgage", type: "mortgage", closed: true, deleted: false, balance: -100, debt_interest_rates: { "2020-01-01": 3000 } },
   { id: "checking", name: "Checking", type: "checking", closed: false, deleted: false, balance: 8000 },
 ];
 
@@ -107,8 +107,10 @@ test("debt_summary reads accounts and full history once and reports the credit c
   assert.equal(visa.principal_balance.milliunits, -1999540);
   assert.equal(visa.cleared_principal.milliunits, -1400000);
   assert.equal(visa.has_estimated_interest, true);
+  assert.equal(visa.interest_rate, 18990);
+  assert.notEqual(visa.interest_rate, 18.99);
   assert.deepEqual(result.accounts.map((account) => account.id), ["card-visa", "loan-big", "loan-small"]);
-  assert.equal(result.accounts.find((account) => account.id === "loan-big").interest_rate, 6);
+  assert.equal(result.accounts.find((account) => account.id === "loan-big").interest_rate, 6000);
   assert.equal(result.accounts.some((account) => account.id === "mortgage-old"), false);
   assert.equal(result.accounts.some((account) => account.id === "checking"), false);
 });

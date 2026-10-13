@@ -17,7 +17,7 @@ const accounts = [
     balance: -2009670,
     last_reconciled_at: "2026-08-01T12:00:00Z",
     note: null,
-    debt_interest_rates: { "2026-01-01": 19.99 },
+    debt_interest_rates: { "2026-01-01": 18990 },
     debt_minimum_payments: { "2026-01-01": 35000 },
     debt_escrow_amounts: null,
   },
@@ -31,7 +31,7 @@ const accounts = [
     balance: -5000000,
     last_reconciled_at: "2026-03-01T00:00:00.000Z",
     note: NOTE,
-    debt_interest_rates: { "2024-01-01": 4.5, "2025-06-01": 5.25, "2099-01-01": 99 },
+    debt_interest_rates: { "2024-01-01": 4500, "2025-06-01": 5250, "2099-01-01": 99000 },
     debt_minimum_payments: { "2024-01-01": 200000, "2025-06-01": 250000, "2099-01-01": 999000 },
     debt_escrow_amounts: { "2025-01-01": 50000, "2025-06-01": 75000 },
   },
@@ -45,7 +45,7 @@ const accounts = [
     balance: -1000000,
     last_reconciled_at: null,
     note: "",
-    debt_interest_rates: { "2025-06-01": 5.25 },
+    debt_interest_rates: { "2025-06-01": 5250 },
     debt_minimum_payments: null,
     debt_escrow_amounts: null,
   },
@@ -72,7 +72,7 @@ const accounts = [
     balance: -100,
     last_reconciled_at: "2020-01-01T00:00:00Z",
     note: "paid off",
-    debt_interest_rates: { "2020-01-01": 3 },
+    debt_interest_rates: { "2020-01-01": 3000 },
     debt_minimum_payments: { "2020-01-01": 1 },
     debt_escrow_amounts: { "2020-01-01": 2 },
   },
@@ -114,7 +114,7 @@ test("credit card estimated interest is the balance gap, including when the gap 
     cleared_principal: { milliunits: -1400000, dollars: -1400 },
     estimated_interest: { milliunits: -10130, dollars: -10.13 },
     has_estimated_interest: true,
-    interest_rate: 19.99,
+    interest_rate: 18990,
     minimum_payment: { milliunits: 35000, dollars: 35 },
     escrow: null,
     on_budget: true,
@@ -136,7 +136,7 @@ test("a loan uses the current dated rate, minimum payment, and escrow", () => {
     cleared_principal: { milliunits: -4500000, dollars: -4500 },
     estimated_interest: { milliunits: -400000, dollars: -400 },
     has_estimated_interest: true,
-    interest_rate: 5.25,
+    interest_rate: 5250,
     minimum_payment: { milliunits: 250000, dollars: 250 },
     escrow: { milliunits: 75000, dollars: 75 },
     on_budget: false,
@@ -190,6 +190,8 @@ test("equal interest rates sort by absolute balance, largest debt magnitude firs
 
 test("deleted transactions are ignored and cleared principal omits uncleared rows", () => {
   const visa = summarize().accounts.find((account) => account.id === "card-visa");
+  assert.equal(visa.interest_rate, 18990);
+  assert.notEqual(visa.interest_rate, 18.99);
   assert.equal(visa.principal_balance.milliunits, -1999540);
   assert.equal(visa.cleared_principal.milliunits, -1400000);
   assert.notEqual(visa.principal_balance.milliunits, visa.cleared_principal.milliunits);
@@ -213,9 +215,9 @@ test("split parents count once and a top-level subtransaction row is ignored", (
 test("compact output is totals plus one line per account", () => {
   const compact = presentDebtSummary(summarize(), { verbose: false });
   assert.deepEqual(compact.accounts, [
-    "card-visa · Visa · creditCard · balance -2009.67 (-2009670 milliunits) · principal -1999.54 (-1999540 milliunits) · estimated_interest -10.13 (-10130 milliunits) · rate 19.99",
-    "loan-auto · Auto Loan · autoLoan · balance -5000 (-5000000 milliunits) · principal -4600 (-4600000 milliunits) · estimated_interest -400 (-400000 milliunits) · rate 5.25",
-    "loan-small · Small Personal · personalLoan · balance -1000 (-1000000 milliunits) · principal -1000 (-1000000 milliunits) · estimated_interest 0 (0 milliunits) · rate 5.25",
+    "card-visa · Visa · creditCard · balance -2009.67 (-2009670 milliunits) · principal -1999.54 (-1999540 milliunits) · estimated_interest -10.13 (-10130 milliunits) · rate 18990",
+    "loan-auto · Auto Loan · autoLoan · balance -5000 (-5000000 milliunits) · principal -4600 (-4600000 milliunits) · estimated_interest -400 (-400000 milliunits) · rate 5250",
+    "loan-small · Small Personal · personalLoan · balance -1000 (-1000000 milliunits) · principal -1000 (-1000000 milliunits) · estimated_interest 0 (0 milliunits) · rate 5250",
     "med-1 · Medical · medicalDebt · balance -9000 (-9000000 milliunits) · principal -9000 (-9000000 milliunits) · estimated_interest 0 (0 milliunits) · rate none",
   ]);
   assert.deepEqual(compact.totals.total_estimated_interest, { milliunits: -410130, dollars: -410.13 });
@@ -228,8 +230,8 @@ test("same-day payments pick the greater id and null rates sort after a zero rat
   const summary = summarizeDebtAccounts({
     asOf: AS_OF,
     accounts: [
-      { id: "b-loan", name: "B", type: "studentLoan", balance: -100, closed: false, deleted: false, debt_interest_rates: { "2026-01-01": 1 } },
-      { id: "a-loan", name: "A", type: "studentLoan", balance: -100, closed: false, deleted: false, debt_interest_rates: { "2026-01-01": 1 } },
+      { id: "b-loan", name: "B", type: "studentLoan", balance: -100, closed: false, deleted: false, debt_interest_rates: { "2026-01-01": 1000 } },
+      { id: "a-loan", name: "A", type: "studentLoan", balance: -100, closed: false, deleted: false, debt_interest_rates: { "2026-01-01": 1000 } },
       { id: "zero", name: "Zero", type: "otherDebt", balance: -1, closed: false, deleted: false, debt_interest_rates: { "2026-01-01": 0 } },
       { id: "none", name: "None", type: "otherDebt", balance: -999999, closed: false, deleted: false, debt_interest_rates: null },
     ],

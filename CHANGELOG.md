@@ -4,7 +4,7 @@
 
 ### Added
 
-- `debt_summary` reports principal, cleared principal, and estimated interest for debt accounts. Amounts are milliunits and dollars. Closed accounts are excluded unless `include_closed` is true. Compact output is totals plus one line per account.
+- `debt_summary` reports principal, cleared principal, and estimated interest for debt accounts. Amounts are milliunits and dollars. `interest_rate` is YNAB's raw `debt_interest_rates` milli-percent (18990 means 18.99%), passed through with no conversion. Closed accounts are excluded unless `include_closed` is true. Compact output is totals plus one line per account.
 
 ### Breaking
 

@@ -398,7 +398,7 @@ Read tools are available by default. Tools that create, update, import, or delet
 |------|-------------|
 | `list_accounts` | List accounts with id, name, type, on-budget/closed status, and dollar balances. Pass `verbose: true` for debt, import, reconciliation, and deleted fields. |
 | `get_account` | Get full account details including notes and debt fields |
-| `debt_summary` | Read-only summary of credit cards, lines of credit, mortgages, and other debt accounts. Principal is the sum of non-deleted transactions; estimated interest is the YNAB balance minus that sum. Closed accounts are omitted unless `include_closed` is true. Pass `verbose: true` for rates, minimum payments, escrow, and the last payment. Default output is totals plus one line per account. |
+| `debt_summary` | Read-only summary of credit cards, lines of credit, mortgages, and other debt accounts. Principal is the sum of non-deleted transactions; estimated interest is the YNAB balance minus that sum. `interest_rate` is YNAB's raw `debt_interest_rates` milli-percent (18990 means 18.99%) with no conversion. Closed accounts are omitted unless `include_closed` is true. Pass `verbose: true` for rates, minimum payments, escrow, and the last payment. Default output is totals plus one line per account. |
 | `create_account` | Write tool: create a new account (checking, savings, creditCard, mortgage, etc.) |
 
 **Supported account types:** `checking`, `savings`, `cash`, `creditCard`, `lineOfCredit`, `otherAsset`, `otherLiability`, `mortgage`, `autoLoan`, `studentLoan`, `personalLoan`, `medicalDebt`, `otherDebt`
