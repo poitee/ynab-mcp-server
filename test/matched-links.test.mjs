@@ -80,6 +80,24 @@ test("does not mistake a successful but malformed payload for a found row", asyn
   assert.equal(result.isError, true);
   assert.match(result.content[0].text, /no matched transaction/);
 });
+test("documented 404.2 resource_not_found is a per-id orphan", async (t) => {
+  const { call } = fixture(t, (url) => url.endsWith("/missing")
+    ? response(404, { error: { id: "404.2", name: "resource_not_found", detail: "Resource not found" } })
+    : response(200, { data: { transaction: { id: "live", amount: -1000, deleted: false } } }));
+  const result = await call({ matchedTransactionIds: ["missing", "live"] });
+  assert.equal(result.isError ?? false, false, result.content[0].text);
+  const data = JSON.parse(result.content[0].text);
+  assert.deepEqual(data.results[0], { matched_transaction_id: "missing", status: "orphan" });
+  assert.equal(data.results[1].status, "found");
+  assert.equal(data.results[1].transaction.amount, -1);
+});
+test("404.1 not_found stays a call error", async (t) => {
+  const { call } = fixture(t, () => response(404, { error: { id: "404.1", name: "not_found", detail: "The specified URI does not exist" } }));
+  const result = await call({ matchedTransactionIds: ["missing"] });
+  assert.equal(result.isError, true);
+  assert.match(result.content[0].text, /not_found/);
+  assert.doesNotMatch(result.content[0].text, /"orphan"/);
+});
 test("unstructured 404 does not become an orphan", async (t) => {
   const { call } = fixture(t, () => new Response("not found", { status: 404 }));
   const result = await call({ matchedTransactionIds: ["a"] });
@@ -115,7 +133,11 @@ test("actual MCP transport validates the read-only resolver schema and returns s
   await client.connect(clientTransport);
   t.after(async () => { await client.close(); await instance.server.close(); });
   const tools = (await client.listTools()).tools;
-  assert.equal(tools.find(tool => tool.name === "resolve_matched_transactions").annotations.readOnlyHint, true);
+  const resolver = tools.find(tool => tool.name === "resolve_matched_transactions");
+  assert.equal(resolver.annotations.readOnlyHint, true);
+  assert.match(JSON.stringify(resolver.inputSchema), /matchedTransactionIds/);
+  const index = await client.callTool({ name: "ynab_tool_index", arguments: {} });
+  assert.match(JSON.stringify(index), /matchedTransactionIds/);
   assert.ok(!tools.some(tool => tool.name === "delete_transaction"));
   const invalid = await client.callTool({ name: "resolve_matched_transactions", arguments: { matchedTransactionIds: [] } });
   assert.equal(invalid.isError, true);

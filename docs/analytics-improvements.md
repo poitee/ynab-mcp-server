@@ -9,9 +9,11 @@ synthetic accounts, categories, schedules, and transactions.
 - [x] Positive category refunds reduce spending rather than disappearing.
 - [x] Income classification uses category IDs resolved from category/group
   `internal` metadata; transaction display names are never income classifiers.
-- [x] Ambiguous or older metadata fails clearly and accepts explicit
-  `incomeCategoryIds` from `list_categories`. Where an adapter provides account
-  payment-category ID linkage, those IDs are excluded and rejected as income.
+- [x] A single internal category identifies income. Several internal categories
+  fall back to Inflow: Ready to Assign. Other ambiguous or older metadata fails
+  clearly and accepts explicit `incomeCategoryIds` from `list_categories`.
+  Where an adapter provides account payment-category ID linkage, those IDs are
+  excluded and rejected as income.
 - [x] Income reversals reduce income. Deleted rows and transfers are excluded.
 - [x] Split components are counted once, with their own income/category/transfer
   identity. Inconsistent splits fail rather than produce incomplete totals.
@@ -49,10 +51,13 @@ synthetic accounts, categories, schedules, and transactions.
 `get_income_expense_summary` and `get_budget_health` read category and account
 metadata. If exactly one active internal category belongs to an active internal
 group after excluding any adapter-provided account payment categories, its ID identifies income.
-The API provides flags rather than an explicit income enum, so ambiguous metadata
-requires an explicit ID; the server does not guess from English names. Native
-account responses do not guarantee payment-category ID linkage. Budgets exposing
-multiple internal category types therefore need an explicit income ID.
+Native budgets also mark Uncategorized and credit-card payments internal, so
+that set is often larger than one. The fallback is the internal category named
+`Inflow: Ready to Assign` (legacy name `Inflow: To be Budgeted`). An ordinary
+category with that display name is not income, and other languages are not
+guessed. Pass `incomeCategoryIds` from `list_categories` (compact rows include
+`internal`) to override or when that name is absent. Native account responses
+do not guarantee payment-category ID linkage.
 
 For income 1,000, ordinary spending 300 and a category refund 100, net spending is
 200, net cashflow is 800 and the savings rate is 80%. A refund larger than that
@@ -67,7 +72,12 @@ display name. A split's parent amount is not counted again after its components.
 
 `get_spending_trends` accepts `groupBy: "category" | "payee"`, inclusive dates,
 and `minAnomalyIncrease` in dollars (default 50). It defaults to the six complete
-calendar months preceding this month and accepts at most 36 calendar months.
+calendar months preceding this month, clamped so the window does not start
+before the budget's first month. A window that falls entirely before that
+month is empty. It accepts at most 36 calendar months. The history read is one
+bounded transaction request, reused from the session cache and refreshed with
+one delta.
+
 The tool rejects a future end date. Completeness is bounded by today's date in
 the pure helper too, so a caller's month-end bound cannot turn a current partial
 month into an observation. Future-dated rows do not contribute to actual trends.
