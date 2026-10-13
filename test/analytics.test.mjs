@@ -15,6 +15,28 @@ test("income identity uses localized internal metadata, not an ordinary category
   assert.deepEqual(result.totals, { income: 1000, spending: -10, net: 1010, savings_rate_pct: 101 });
 });
 
+test("several internal categories fall back to Inflow: Ready to Assign", () => {
+  const native = [
+    { id: "system", internal: true, name: "Internal Master Category", categories: [
+      { id: "rta", internal: true, name: "Inflow: Ready to Assign" },
+      { id: "uncat", internal: true, name: "Uncategorized" },
+    ] },
+    { id: "cards", internal: true, name: "Credit Card Payments", categories: [{ id: "card", internal: true, name: "Fake Card" }] },
+  ];
+  assert.deepEqual(resolveIncomeCategoryIds(native), { ids: ["rta"], source: "ready_to_assign_category_name" });
+  const spaced = [{ id: "system", internal: true, categories: [
+    { id: "legacy", internal: true, name: "Inflow : To be Budgeted" },
+    { id: "uncat", internal: true, name: "Uncategorized" },
+  ] }];
+  assert.deepEqual(resolveIncomeCategoryIds(spaced).ids, ["legacy"]);
+  assert.throws(() => resolveIncomeCategoryIds([{ id: "user", internal: false, categories: [{ id: "named", internal: false, name: "Inflow: Ready to Assign" }] }]), /unavailable/);
+  const duplicate = [{ id: "system", internal: true, categories: [
+    { id: "a", internal: true, name: "Inflow: Ready to Assign" },
+    { id: "b", internal: true, name: "Inflow: Ready to Assign" },
+  ] }];
+  assert.throws(() => resolveIncomeCategoryIds(duplicate), /ambiguous/);
+});
+
 test("ambiguous and legacy income metadata fails clearly; explicit IDs resolve it", () => {
   const ambiguous = [...groups, { id: "other", internal: true, categories: [{ id: "other-internal", internal: true }] }];
   assert.throws(() => resolveIncomeCategoryIds(ambiguous), /ambiguous/);

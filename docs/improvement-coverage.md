@@ -75,9 +75,10 @@ Material behavior changes and honest limits:
   state. An uncertain recreation/deletion undo is claimed durably and blocked from
   replay; inspect fresh state manually. Deleted rows lose their bank-import link
   when recreated, as the preview describes.
-- Income metadata is deliberately conservative: ambiguous native internal
-  category/group flags require explicit `incomeCategoryIds`. Uncategorized
-  inflows are disclosed separately. Refunds can yield negative spending.
+- Income defaults to the unique internal category, or to Inflow: Ready to
+  Assign when native metadata lists several internal categories. Pass
+  `incomeCategoryIds` to override. Uncategorized inflows are disclosed
+  separately. Refunds can yield negative spending.
 - Scheduled forecasts use only known manual schedules and current ledger balances;
   they exclude unrecorded spending/settlement and disclose ambiguous twice-monthly
   anchors rather than invent dates. Historical anomalies are observations, not

@@ -1226,6 +1226,7 @@ async function fetchTransactions({
   month,
   lastKnowledgeOfServer,
   freshness = "fresh",
+  boundedHistory = false,
 }) {
   const hasResourceFilter = Boolean(accountId || categoryId || payeeId);
   const effectiveMonth = hasResourceFilter ? undefined : month;
@@ -1241,13 +1242,35 @@ async function fetchTransactions({
       data.freshness = { ...freshReadMetadata(data, { kind: "requested_range", since_date: since ?? null, until_date: effectiveUntilDate ?? null, month: effectiveMonth ?? null, budget_alias: resolveBudgetId(budgetId) }), refresh: "dynamic_budget_alias", cache_stored: false };
       return data;
     }
+    // Complete history stays on its own scope and still starts at 1970 so a
+    // later older get_transactions can expand it. boundedHistory keeps the
+    // requested window: one GET, then a single delta when the TTL expires.
+    const sinceForCoverage = boundedHistory
+      ? (effectiveSinceDate ?? allHistorySinceDate())
+      : (effectiveSinceDate && effectiveSinceDate < allHistorySinceDate() ? effectiveSinceDate : allHistorySinceDate());
+    const coverage = effectiveMonth
+      ? { kind: "month", since_date: effectiveMonth, until_date: endOfMonth(effectiveMonth), type: type ?? null }
+      : { kind: "history_since", since_date: sinceForCoverage, ...(boundedHistory && effectiveUntilDate ? { until_date: effectiveUntilDate } : {}), type: type ?? null, resource_scope: accountId ? { account_id: accountId } : categoryId ? { category_id: categoryId } : payeeId ? { payee_id: payeeId } : "budget" };
     const data = await entityCache.read({
-      budgetId: resolveBudgetId(budgetId), resource: "transactions", scope: JSON.stringify([transactionPath, type ?? null]),
+      budgetId: resolveBudgetId(budgetId), resource: "transactions",
+      scope: JSON.stringify([transactionPath, type ?? null, boundedHistory ? "bounded" : "complete"]),
       // Filtered endpoint deltas can omit a row that moved out of that scope.
       // Replacing its full scoped baseline avoids retained stale membership.
+      // A bounded date window has the same hole: since_date/until_date on the
+      // delta hide a row whose date left the window, and the merge keeps the
+      // old in-window copy. The baseline stays windowed; the delta asks for
+      // every change and the local filter below applies the window.
       deltaSupported: !hasResourceFilter && !effectiveMonth && !type,
-      coverage: effectiveMonth ? { kind: "month", since_date: effectiveMonth, until_date: endOfMonth(effectiveMonth), type: type ?? null } : { kind: "history_since", since_date: effectiveSinceDate && effectiveSinceDate < allHistorySinceDate() ? effectiveSinceDate : allHistorySinceDate(), type: type ?? null, resource_scope: accountId ? { account_id: accountId } : categoryId ? { category_id: categoryId } : payeeId ? { payee_id: payeeId } : "budget" },
-      load: (cursor, coverage) => ynabFetch(transactionPath, { query: { since_date: effectiveMonth ? undefined : coverage.since_date, type, last_knowledge_of_server: cursor } }),
+      coverage,
+      load: (cursor, windowCoverage) => {
+        const boundedDelta = boundedHistory && cursor != null;
+        return ynabFetch(transactionPath, { query: {
+          since_date: effectiveMonth || boundedDelta ? undefined : windowCoverage.since_date,
+          until_date: boundedHistory && !boundedDelta ? windowCoverage.until_date : undefined,
+          type,
+          last_knowledge_of_server: cursor,
+        } });
+      },
     });
     data.transactions = data.transactions.filter((row) => (!effectiveSinceDate || row.date >= effectiveSinceDate) && (!effectiveUntilDate || row.date <= effectiveUntilDate));
     data.freshness.returned_range = { since_date: effectiveSinceDate ?? null, until_date: effectiveUntilDate ?? null, type: type ?? null };
@@ -2211,7 +2234,7 @@ function formatCategory(c) {
 
 registerTool(
   "list_categories",
-  { description: "List groups/categories with current-month dollar budgets, activity and balances. Default output is compact (ids, names, hidden, balances). Pass verbose:true for goals, notes, internal, and deleted. Use get_month for other months or search_categories for names.", inputSchema: {
+  { description: "List groups/categories with current-month dollar budgets, activity and balances. Default output is compact (ids, names, hidden, internal, balances). Pass verbose:true for goals, notes, and deleted. Use get_month for other months or search_categories for names.", inputSchema: {
     budgetId: z.string().optional(),
     lastKnowledgeOfServer: z.number().int().nonnegative().optional().describe("Delta cursor; returns { category_groups, server_knowledge }."),
     ...readOptionsSchema,
@@ -2680,9 +2703,9 @@ registerTool(
 // Resolve the exact immutable match references, without scheduled-ID fallback.
 registerTool(
   "resolve_matched_transactions",
-  { description: "Resolve match_broken matched_transaction_id values from review_unapproved. Deduplicates up to 50 IDs. Returns orphan only for transaction 404; found includes the row for duplicate review, not proof to delete it. Other failures abort with an error. Read-only.", inputSchema: {
+  { description: "Resolve match_broken rows. Pass matchedTransactionIds: the matched_transaction_id values from review_unapproved (1-50). Each id returns orphan when YNAB says resource_not_found (HTTP 404, id 404.2) or found with the row for duplicate review. Other failures abort the call. Read-only.", inputSchema: {
     budgetId: z.string().optional(),
-    matchedTransactionIds: z.array(z.string().min(1).refine((id) => id.trim().length > 0 && id !== "." && id !== "..", "Invalid transaction ID")).min(1).max(50),
+    matchedTransactionIds: z.array(z.string().min(1).refine((id) => id.trim().length > 0 && id !== "." && id !== "..", "Invalid transaction ID")).min(1).max(50).describe("matched_transaction_id values from review_unapproved. Argument name is matchedTransactionIds."),
   } },
   ({ budgetId, matchedTransactionIds }) =>
     run(async () => {
@@ -2693,9 +2716,10 @@ registerTool(
       for (const id of new Set(matchedTransactionIds)) {
         const path = `/plans/${encodeURIComponent(bid)}/transactions/${encodeURIComponent(id)}`;
         const response = await secureFetch(buildYnabUrl(path), { method: "GET" });
-        const body = await response.json();
-        if (response.status === 404 && body?.error?.name === "resource_not_found"
-            && String(body.error.id) === "404") {
+        const body = await response.json().catch(() => null);
+        // Live YNAB uses error id 404.2 for resource_not_found. The name is the
+        // signal; requiring id "404" turned every real miss into a failed call.
+        if (response.status === 404 && body?.error?.name === "resource_not_found") {
           results.push({ matched_transaction_id: id, status: "orphan" });
         } else if (!response.ok) {
           throw body?.error ? body : new Error(`HTTP ${response.status} resolving matched transaction`);
@@ -4187,13 +4211,28 @@ async function analyticsIncomeIdentity(bid, incomeCategoryIds, categoryData, acc
   return resolveIncomeCategoryIds(categories.category_groups, { incomeCategoryIds, accounts: accounts.accounts });
 }
 
+// One windowed transaction read shared by the analytics tools. The cache
+// serves a repeat call from the TTL and refreshes with a single delta.
+function fetchAnalyticsTransactions({ budgetId, sinceDate, untilDate }) {
+  return fetchTransactions({ budgetId, sinceDate, untilDate, freshness: "cached", boundedHistory: true });
+}
+
+async function budgetFirstMonth(bid) {
+  const { data } = await api.months.getPlanMonths(bid);
+  const months = (data.months || [])
+    .filter((month) => month && !month.deleted && typeof month.month === "string")
+    .map((month) => month.month)
+    .sort();
+  return months[0] ?? null;
+}
+
 registerTool(
   "get_income_expense_summary",
-  { description: "Monthly income/net spending and savings rate. Income uses category/group metadata IDs, independent of display language; reversals reduce income. Category refunds reduce spending. Split components counted once; transfers/deleted rows excluded. Ambiguous metadata requires incomeCategoryIds; uncategorized inflows are reported separately.", inputSchema: {
+  { description: "Monthly income/net spending and savings rate. Income uses category/group metadata IDs, independent of display language; reversals reduce income. Category refunds reduce spending. Split components counted once; transfers/deleted rows excluded. Defaults to the unique internal category, or to Inflow: Ready to Assign when several internal categories exist. Override with incomeCategoryIds. Uncategorized inflows are reported separately.", inputSchema: {
     budgetId: z.string().optional(),
     sinceDate: z.string().optional().describe("Start of the window (YYYY-MM-DD). Defaults to 6 full months back."),
     untilDate: z.string().optional().describe("End of the window (YYYY-MM-DD). Defaults to today."),
-    incomeCategoryIds: z.array(z.string()).min(1).max(10).optional().describe("Explicit Ready to Assign category IDs from list_categories if internal metadata is ambiguous or unavailable."),
+    incomeCategoryIds: z.array(z.string()).min(1).max(10).optional().describe("Override the Inflow: Ready to Assign fallback. Category IDs from list_categories (compact rows include internal)."),
   } },
   ({ budgetId, sinceDate, untilDate, incomeCategoryIds }) =>
     run(async () => {
@@ -4204,7 +4243,7 @@ registerTool(
       parseAnalyticsDate(since, "sinceDate"); parseAnalyticsDate(until, "untilDate");
       if (since > until) throw new Error("sinceDate must not be after untilDate.");
       const [data, identity] = await Promise.all([
-        fetchTransactions({ budgetId: bid, sinceDate: since, untilDate: until }),
+        fetchAnalyticsTransactions({ budgetId: bid, sinceDate: since, untilDate: until }),
         analyticsIncomeIdentity(bid, incomeCategoryIds),
       ]);
       const summary = summarizeIncomeExpenseMilliunits(data.transactions, { incomeCategoryIds: identity.ids, sinceDate: since, untilDate: until });
@@ -4286,24 +4325,25 @@ registerTool(
 
 registerTool(
   "get_budget_health",
-  { description: "Budget snapshot: savings rate, age of money, Ready to Assign, overspends, card funding; green/yellow/red. Uses month/accounts and trailing-3-month income/spending (~4 requests). Defaults, not YNAB rules: savings 20%+ green, underfunded card debt red, overspends yellow.", inputSchema: {
+  { description: "Budget snapshot: savings rate, age of money, Ready to Assign, overspends, card funding; green/yellow/red. Uses month/accounts and one trailing-3-month transaction read (~4 requests). Income defaults to Inflow: Ready to Assign; override with incomeCategoryIds. Defaults, not YNAB rules: savings 20%+ green, underfunded card debt red, overspends yellow.", inputSchema: {
     budgetId: z.string().optional(),
-    incomeCategoryIds: z.array(z.string()).min(1).max(10).optional().describe("Explicit income IDs if category metadata is ambiguous."),
+    incomeCategoryIds: z.array(z.string()).min(1).max(10).optional().describe("Override the Inflow: Ready to Assign fallback. Category IDs from list_categories (compact rows include internal)."),
   } },
   ({ budgetId, incomeCategoryIds }) =>
     run(async () => {
       const bid = resolveBudgetId(budgetId);
       const month = currentBudgetMonth();
       const since = new Date(Date.now() - 92 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+      const untilToday = new Date().toISOString().slice(0, 10);
       const [{ data: monthData }, { data: acctData }, txData, { data: categoryData }] = await Promise.all([
         api.months.getPlanMonth(bid, month),
         api.accounts.getAccounts(bid),
-        fetchTransactions({ budgetId: bid, sinceDate: since }),
+        fetchAnalyticsTransactions({ budgetId: bid, sinceDate: since, untilDate: untilToday }),
         api.categories.getCategories(bid),
       ]);
       const m = monthData.month;
       const identity = await analyticsIncomeIdentity(bid, incomeCategoryIds, categoryData, acctData);
-      const { months, totals, unclassified_inflows } = summarizeIncomeExpenseMilliunits(txData.transactions, { incomeCategoryIds: identity.ids, sinceDate: since, untilDate: new Date().toISOString().slice(0, 10) });
+      const { months, totals, unclassified_inflows } = summarizeIncomeExpenseMilliunits(txData.transactions, { incomeCategoryIds: identity.ids, sinceDate: since, untilDate: untilToday });
       const savingsRate = totals.savings_rate_pct;
 
       const overspent = (m.categories || []).filter((c) => !c.deleted && c.balance < 0 && c.category_group_name !== "Internal Master Category");
@@ -4355,26 +4395,39 @@ registerTool(
 
 registerTool(
   "get_spending_trends",
-  { description: "Read-only monthly net spending by category or payee, with zero-activity months, refunds, split components and prior-month changes. Observational unusual-spending flags use >=3 prior complete months and an explicit median/MAD threshold; partial months are labeled and never flagged. Adds historical comparisons beyond recurring-charge/reconciliation tools.", inputSchema: {
+  { description: "Read-only monthly net spending by category or payee, with zero-activity months, refunds, split components and prior-month changes. Observational unusual-spending flags use >=3 prior complete months and an explicit median/MAD threshold; partial months are labeled and never flagged. Default window is six complete months, clamped to the budget's first month. Income defaults to Inflow: Ready to Assign; override with incomeCategoryIds.", inputSchema: {
     budgetId: z.string().optional(),
     groupBy: z.enum(["category", "payee"]).optional().describe("Group stable IDs by category (default) or payee."),
-    sinceDate: z.string().optional().describe("Inclusive start YYYY-MM-DD; default six complete calendar months ago."),
+    sinceDate: z.string().optional().describe("Inclusive start YYYY-MM-DD; default six complete calendar months ago, clamped to the budget's first month."),
     untilDate: z.string().optional().describe("Inclusive end YYYY-MM-DD; default previous calendar month's last day. Maximum 36 calendar months."),
     minAnomalyIncrease: z.number().nonnegative().max(100000000).optional().describe("Minimum dollar increase for an observational flag (default 50), combined with median/MAD thresholds."),
-    incomeCategoryIds: z.array(z.string()).min(1).max(10).optional().describe("Explicit income IDs when internal metadata is ambiguous."),
+    incomeCategoryIds: z.array(z.string()).min(1).max(10).optional().describe("Override the Inflow: Ready to Assign fallback. Category IDs from list_categories (compact rows include internal)."),
   } },
   ({ budgetId, groupBy, sinceDate, untilDate, minAnomalyIncrease, incomeCategoryIds }) => run(async () => {
     const bid = resolveBudgetId(budgetId);
     const today = new Date();
+    const todayIso = today.toISOString().slice(0, 10);
     const until = untilDate || new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 0)).toISOString().slice(0, 10);
-    const since = sinceDate || new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() - 6, 1)).toISOString().slice(0, 10);
-    if (until > today.toISOString().slice(0, 10)) throw new Error("untilDate must not be in the future; an unfinished month cannot be treated as a complete spending observation.");
+    const requestedSince = sinceDate || new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() - 6, 1)).toISOString().slice(0, 10);
+    if (until > todayIso) throw new Error("untilDate must not be in the future; an unfinished month cannot be treated as a complete spending observation.");
     // Validate/cap the requested window before requesting history.
-    spendingTrends([], { sinceDate: since, untilDate: until });
+    spendingTrends([], { sinceDate: requestedSince, untilDate: until });
+    const firstMonth = await budgetFirstMonth(bid);
+    const since = firstMonth && requestedSince < firstMonth ? firstMonth : requestedSince;
+    const group = groupBy || "category";
+    if (since > until) {
+      return ok({
+        group_by: group,
+        window: { since, until, as_of_date: todayIso, complete_months: [], partial_months: [], first_budget_month: firstMonth, requested_since: requestedSince },
+        entities: [], observations: [], writes_performed: 0, income_classification: null,
+        anomaly_method: "The requested window is entirely before the budget's first month, so there is no history to compare.",
+      });
+    }
     const [data, identity] = await Promise.all([
-      fetchTransactions({ budgetId: bid, sinceDate: since, untilDate: until }), analyticsIncomeIdentity(bid, incomeCategoryIds),
+      fetchAnalyticsTransactions({ budgetId: bid, sinceDate: since, untilDate: until }), analyticsIncomeIdentity(bid, incomeCategoryIds),
     ]);
-    return ok({ ...spendingTrends(data.transactions, { incomeCategoryIds: identity.ids, groupBy: groupBy || "category", sinceDate: since, untilDate: until, minAnomalyDelta: milliunits(minAnomalyIncrease ?? 50) }), income_classification: { category_ids: identity.ids, source: identity.source } });
+    const trends = spendingTrends(data.transactions, { incomeCategoryIds: identity.ids, groupBy: group, sinceDate: since, untilDate: until, minAnomalyDelta: milliunits(minAnomalyIncrease ?? 50) });
+    return ok({ ...trends, window: { ...trends.window, first_budget_month: firstMonth, requested_since: requestedSince }, income_classification: { category_ids: identity.ids, source: identity.source } });
   })
 );
 

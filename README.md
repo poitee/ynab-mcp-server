@@ -405,7 +405,7 @@ Read tools are available by default. Tools that create, update, import, or delet
 
 | Tool | Description |
 |------|-------------|
-| `list_categories` | List category groups and categories with ids, names, hidden, and current-month budgeted/activity/balance in dollars. Pass `verbose: true` for goals, notes, `internal`, and `deleted` (`internal` marks YNAB's own categories such as Credit Card Payments). |
+| `list_categories` | List category groups and categories with ids, names, hidden, `internal`, and current-month budgeted/activity/balance in dollars. Pass `verbose: true` for goals, notes, and `deleted`. `internal` marks YNAB's own categories such as Inflow: Ready to Assign and Credit Card Payments. |
 | `get_category` | Get full category details including goal progress and cadence |
 | `get_month_category` | Get category budget for a specific month |
 | `update_month_category` | Write tool: set the budgeted amount for a category in a month |
@@ -489,8 +489,8 @@ The YNAB API has no category merge/delete endpoint and cannot split an already-i
 | `audit_credit_card_payments` | Compare each credit card's balance against its Credit Card Payment category and report underfunded cards. |
 | `audit_account_reconciliation` | Per-account reconciliation status; with `accountId`, lists the exact uncleared/unapproved items to check against the bank statement. |
 | `get_budget_health` | Snapshot with green/yellow/red indicators: savings rate, age of money, Ready to Assign, overspending, credit card debt. |
-| `get_income_expense_summary` | Net income/spending and savings, with refunds/reversals, localized category identities and split/transfer accounting. Ambiguous metadata requires explicit income category IDs. |
-| `get_spending_trends` | Net category/payee monthly trends and carefully labeled unusual-spending observations with threshold evidence. |
+| `get_income_expense_summary` | Net income/spending and savings, with refunds/reversals, localized category identities and split/transfer accounting. Defaults to Inflow: Ready to Assign when several internal categories exist; pass `incomeCategoryIds` to override. |
+| `get_spending_trends` | Net category/payee monthly trends and carefully labeled unusual-spending observations with threshold evidence. The default window is clamped to the budget's first month. |
 | `forecast_scheduled_balances` | Future scheduled-payment account ledger scenarios, including transfer effects and explicit omissions. |
 | `detect_recurring_charges` | Find subscriptions/recurring charges from history by payee + amount + cadence, with estimated annual cost. |
 | `export_transactions` | Export filtered transactions as CSV text. Capped at `maxRows` (default 500, max 2000); when exceeded the newest rows are kept and a second text block reports the truncation. |

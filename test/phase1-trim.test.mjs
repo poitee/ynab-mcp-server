@@ -5,6 +5,7 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { createMcpHarness, assertToolOk } from "./support/mcp-harness.mjs";
+import { compactCategoryGroup } from "../lib/field-projections.mjs";
 
 const { resolveToolProfile } = await import("../index.js");
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -128,6 +129,17 @@ test("stdio default, YNAB_TOOL_PROFILE=write, and --profile write gate registrat
   assertProfileTools(fromFlag, { writes: true });
 });
 
+test("compact category groups keep the internal flag and drop verbose-only fields", () => {
+  const compact = compactCategoryGroup({
+    id: "g", name: "Internal Master Category", hidden: true, internal: true, deleted: false,
+    categories: [{ id: "rta", name: "Inflow: Ready to Assign", category_group_id: "g", hidden: true, internal: true, budgeted: 0, activity: 0, balance: 0, deleted: false, goal_target: 1 }],
+  });
+  assert.equal(compact.internal, true);
+  assert.equal(compact.categories[0].internal, true);
+  assert.equal("deleted" in compact, false);
+  assert.equal("goal_target" in compact.categories[0], false);
+});
+
 test("five read tools are compact by default and unchanged with verbose:true", async (t) => {
   const harness = await createMcpHarness({ writesEnabled: false });
   t.after(() => harness.close());
@@ -155,9 +167,10 @@ test("five read tools are compact by default and unchanged with verbose:true", a
     id: "fake-living",
     name: "Living",
     hidden: false,
+    internal: false,
     categories: [
-      { id: "fake-food", name: "Food", category_group_id: "fake-living", hidden: false, budgeted: 100, activity: -12, balance: 88 },
-      { id: "fake-travel", name: "Travel", category_group_id: "fake-living", hidden: false, budgeted: 20, activity: 0, balance: 20 },
+      { id: "fake-food", name: "Food", category_group_id: "fake-living", hidden: false, internal: false, budgeted: 100, activity: -12, balance: 88 },
+      { id: "fake-travel", name: "Travel", category_group_id: "fake-living", hidden: false, internal: false, budgeted: 20, activity: 0, balance: 20 },
     ],
   });
   const verboseGroups = assertToolOk(await harness.call("list_categories", { verbose: true }));
@@ -169,7 +182,8 @@ test("five read tools are compact by default and unchanged with verbose:true", a
   assert.equal(verboseGroups[0].internal, false);
   assert.equal("deleted" in groups[0], false);
   assert.equal("goal_target" in groups[0].categories[0], false);
-  assert.equal("internal" in groups[0].categories[0], false);
+  assert.equal(groups[0].internal, false);
+  assert.equal(groups[0].categories[0].internal, false);
 
   const month = assertToolOk(await harness.call("get_month", { month: "2026-10-01" }));
   assert.deepEqual(month, {
