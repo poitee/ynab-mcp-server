@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- `debt_summary` reports principal, cleared principal, and estimated interest for debt accounts. Amounts are milliunits and dollars. Closed accounts are excluded unless `include_closed` is true. Compact output is totals plus one line per account.
+
 ### Breaking
 
 - The default tool profile is read-only. Write and other mutating tools are registered only for an explicit write profile: `YNAB_ALLOW_WRITES=1`, `YNAB_TOOL_PROFILE=write`, or `--profile write`. Direct registration was already read-only via `YNAB_ALLOW_WRITES`; the profile flag and env var are additional opt-ins for the same gate.
