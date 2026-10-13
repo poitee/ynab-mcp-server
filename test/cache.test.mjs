@@ -188,7 +188,7 @@ test("read lists share lean/full/freshness options, cached hits and fresh bypass
     const lean = await output(server, tool, { freshness: "cached", projection: "lean" });
     assert.equal(lean.freshness.complete, true);
     assert.equal(lean[key].length, 1);
-    const full = await output(server, tool, { freshness: "cached", projection: "full" });
+    const full = await output(server, tool, { freshness: "cached", projection: "full", verbose: true });
     assert.equal(full.freshness.source, "cache");
     const fresh = await output(server, tool, { includeFreshness: true });
     assert.equal(fresh.freshness.source, "network");

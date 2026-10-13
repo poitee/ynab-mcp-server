@@ -10,10 +10,10 @@
 </p>
 
 <p align="center">
-  <code>67 tools + 4 discovery helpers</code> &bull;
+  <code>60 tools + 4 discovery helpers</code> &bull;
   <code>6 guided prompts</code> &bull;
   <code>undo journal</code> &bull;
-  <code>45 read-only operations by default</code> &bull;
+  <code>38 read-only operations by default</code> &bull;
   <code>read-only by default</code>
 </p>
 
@@ -95,7 +95,7 @@ The [July 15 acceptance record](docs/YNAB-COMPLETE-WORKLOG-2026-07-15.md) docume
 
 Claude and Codex plugin packages remain available for distribution through a separately managed marketplace. This repository no longer supplies their root catalogs. For direct use, register the npm package with your MCP client.
 
-The plugin starts `@oliverames/mcp-server-for-ynab@latest` and preserves the prior `ames-ynab` connector behavior by setting `YNAB_ALLOW_WRITES=1`. Direct MCP registration remains read-only unless you explicitly enable writes.
+The plugin starts `@oliverames/mcp-server-for-ynab@latest` and preserves the prior `ames-ynab` connector behavior by setting `YNAB_ALLOW_WRITES=1`. Direct MCP registration stays on the read-only profile unless you set `YNAB_ALLOW_WRITES=1`, `YNAB_TOOL_PROFILE=write`, or `--profile write`.
 
 ### Other Plugin Hosts
 
@@ -194,7 +194,7 @@ codex mcp remove ynab
 
 ### 4. Enable Write Tools (Optional)
 
-By default, the server registers read-only tools only. To expose tools that create, update, import, or delete YNAB data, add `YNAB_ALLOW_WRITES=1` when you register the server:
+By default, the server registers the read-only profile. To expose tools that create, update, import, or delete YNAB data, opt in to the write profile with any one of `YNAB_ALLOW_WRITES=1`, `YNAB_TOOL_PROFILE=write`, or `--profile write`:
 
 ```bash
 claude mcp add ynab --scope user \
@@ -275,7 +275,7 @@ docker build -t mcp-server-for-ynab .
 docker run -i --rm -e YNAB_API_TOKEN=your-token-here mcp-server-for-ynab
 ```
 
-Add `-e YNAB_ALLOW_WRITES=1` to enable write tools, and `-e YNAB_BUDGET_ID=...` for a default budget.
+Add `-e YNAB_ALLOW_WRITES=1` or `-e YNAB_TOOL_PROFILE=write` to enable write tools, and `-e YNAB_BUDGET_ID=...` for a default budget. `--profile write` is the same opt-in when the process is started directly.
 
 ### 1Password Token Lookup (Optional)
 
@@ -316,7 +316,6 @@ YNAB_API_TOKEN=your-token-here npm run smoke:review-unapproved -- --published
 | "Move $200 from emergency fund to dining" | `search_categories` → `update_month_category` (x2) |
 | "Categorize all my Amazon orders from this week" | `get_transactions` (filtered) → `update_transactions` (batch) |
 | "Create a 'Side Projects' spending category" | `search_categories` (find group) → `create_category` |
-| "How has my budget been re-allocated this month?" | `get_money_movements_by_month` |
 | "What subscriptions am I actually paying for?" | `detect_recurring_charges` finds payee + amount + cadence patterns with annual cost |
 | "How am I doing financially?" | `get_budget_health` scores savings rate, age of money, and overspending green/yellow/red |
 | "Are my credit card payments fully funded?" | `audit_credit_card_payments` compares card balances to payment categories |
@@ -329,7 +328,7 @@ YNAB_API_TOKEN=your-token-here npm run smoke:review-unapproved -- --published
 
 ## Features
 
-The source defines 67 tools for the YNAB v1 REST API and four discovery helpers, for 71 registered MCP operations. Read-only mode exposes 42 YNAB operations and three helpers. Enabling writes adds 25 YNAB operations and the write-execution helper. The server also defines MCP prompts and resources:
+The source defines 60 tools for the YNAB v1 REST API and four discovery helpers, for 64 registered MCP operations. Read-only mode exposes 35 YNAB operations and three helpers. Enabling the write profile adds 25 YNAB operations and the write-execution helper. The server also defines MCP prompts and resources:
 
 | Resource | Tools | Capabilities |
 |----------|-------|-------------|
@@ -337,9 +336,7 @@ The source defines 67 tools for the YNAB v1 REST API and four discovery helpers,
 | **Accounts** | 3 | List, view, create |
 | **Categories** | 9 | Create and update categories/groups, search, goals, monthly budgets |
 | **Payees** | 5 | List, view, create, rename, search |
-| **Payee Locations** | 3 | GPS coordinates for mobile transactions |
 | **Months** | 2 | Monthly summaries with per-category breakdown |
-| **Money Movements** | 4 | Budget re-allocation tracking |
 | **Transactions** | 12 | Create, read, update, delete, bulk operations, matching, and filters |
 | **Scheduled Transactions** | 5 | Full CRUD for recurring transactions |
 | **Convenience** | 2 | Unapproved transaction review and overspending checks |
@@ -353,7 +350,8 @@ Beyond tools, the server ships **6 MCP prompts** (guided workflows: monthly revi
 
 ### Design Decisions
 
-- **Read-only by default** - write tools are not registered unless `YNAB_ALLOW_WRITES=1` is set. Read tools are annotated with `readOnlyHint: true`; write tools are annotated with `readOnlyHint: false`, idempotency hints, and destructive hints for delete operations.
+- **Read-only by default** - the default profile does not register write tools. Opt in with `YNAB_ALLOW_WRITES=1`, `YNAB_TOOL_PROFILE=write`, or `--profile write`. Read tools are annotated with `readOnlyHint: true`; write tools are annotated with `readOnlyHint: false`, idempotency hints, and destructive hints for delete operations.
+- **Compact reads** - `review_unapproved`, `get_transactions`, `list_accounts`, `list_categories`, and `get_month` return ids, names, dates, dollar amounts, payee and category names, cleared/approved, and balances. Null, deleted, and redundant fields are omitted. Pass `verbose: true` for the previous full payload, including memos and raw bank payee text on transactions.
 - **Server instructions and structured contracts** - the server sends a compact `instructions` block at initialize (dollar amounts, `search_transactions` before unfiltered pulls, `transactionId`, the transfer convenience, write-safety rules), so clients that never open a prompt or resource still get the rules that matter. Every tool exposes a human-readable title, an input schema even when it takes no arguments, a minimal output schema, and matching `structuredContent`. Impact hints describe YNAB as a private, bounded system so app clients can distinguish reads, writes, and destructive operations accurately.
 - **Exact write previews and confirmation** - every write requires a session-bound single-use preview token and `confirmed: true` after explicit user approval. Bulk-filter writes also support `expectedMatchedCount` as an additional guard.
 - **Dollar amounts everywhere** - inputs and outputs are in dollars (`-12.34`), never milliunits (`-12340`). Conversion is automatic and transparent.
@@ -397,7 +395,7 @@ Read tools are available by default. Tools that create, update, import, or delet
 
 | Tool | Description |
 |------|-------------|
-| `list_accounts` | List all accounts with balances, debt details, and import status |
+| `list_accounts` | List accounts with id, name, type, on-budget/closed status, and dollar balances. Pass `verbose: true` for debt, import, reconciliation, and deleted fields. |
 | `get_account` | Get full account details including notes and debt fields |
 | `create_account` | Write tool: create a new account (checking, savings, creditCard, mortgage, etc.) |
 
@@ -407,7 +405,7 @@ Read tools are available by default. Tools that create, update, import, or delet
 
 | Tool | Description |
 |------|-------------|
-| `list_categories` | List all category groups and their categories with budgeted/activity/balance. Groups and categories carry `hidden`, `deleted`, and `internal` flags (`internal` marks YNAB's own categories such as Credit Card Payments). |
+| `list_categories` | List category groups and categories with ids, names, hidden, and current-month budgeted/activity/balance in dollars. Pass `verbose: true` for goals, notes, `internal`, and `deleted` (`internal` marks YNAB's own categories such as Credit Card Payments). |
 | `get_category` | Get full category details including goal progress and cadence |
 | `get_month_category` | Get category budget for a specific month |
 | `update_month_category` | Write tool: set the budgeted amount for a category in a month |
@@ -427,35 +425,18 @@ Read tools are available by default. Tools that create, update, import, or delet
 | `update_payee` | Write tool: rename a payee |
 | `search_payees` | Case-insensitive partial name search |
 
-### Payee Locations
-
-| Tool | Description |
-|------|-------------|
-| `list_payee_locations` | List all payee locations (GPS coordinates from mobile app) |
-| `get_payee_location` | Get a specific payee location |
-| `get_payee_locations_by_payee` | Get all locations for a specific payee |
-
 ### Months
 
 | Tool | Description |
 |------|-------------|
 | `list_months` | List budget months with income, budgeted, activity, to-be-budgeted, age of money, and notes |
-| `get_month` | Get month detail with per-category budget/activity/balance/goal breakdown |
-
-### Money Movements
-
-| Tool | Description |
-|------|-------------|
-| `list_money_movements` | List all money movements (budget re-allocations between categories) |
-| `get_money_movements_by_month` | Get money movements for a specific month |
-| `list_money_movement_groups` | List all money movement groups (batched re-allocations) |
-| `get_money_movement_groups_by_month` | Get money movement groups for a specific month |
+| `get_month` | Get month totals and per-category budget/activity/balance in dollars. Pass `verbose: true` for notes, goals, and deleted fields. |
 
 ### Transactions
 
 | Tool | Description |
 |------|-------------|
-| `get_transactions` | Get transactions with filters: by account, category, payee, month, status (`unapproved`/`uncategorized`), `sinceDate`, and `untilDate`. Non-delta results stop at 500 rows by default (`limit` up to 2000, page with `offset`); a capped or paged result returns `{ transactions, total, returned, offset, has_more, next_offset }` instead of a bare array. Prefer `search_transactions` when you are looking for specific rows. |
+| `get_transactions` | Get transactions with filters: by account, category, payee, month, status (`unapproved`/`uncategorized`), `sinceDate`, and `untilDate`. Default rows keep ids, names, dates, dollar amounts, and cleared/approved. Pass `verbose: true` for memos, raw bank payee text, nulls, and deleted. Non-delta results stop at 500 rows by default (`limit` up to 2000, page with `offset`); a capped or paged result returns `{ transactions, total, returned, offset, has_more, next_offset }` instead of a bare array. Prefer `search_transactions` when you are looking for specific rows. |
 | `search_transactions` | Server-side search with pagination: `query` is a case-insensitive substring match over payee name, raw bank import string, memo, account, category, and split rows; `amount` matches on absolute value (12.34 finds a -12.34 outflow). Optional `accountId` / `sinceDate` / `untilDate` bound the scan; `limit` (default 50) and `offset` page through `total_matches`, newest first, with `next_offset` for the following page. |
 | `get_transaction` | Get a single transaction by ID. The argument is `transactionId`, not `id` (includes subtransactions). Auto-handles composite scheduled-transaction IDs like `uuid_YYYY-MM-DD`; if the underlying matched transaction has been deleted, falls back to returning the active scheduled template wrapped as `{ resource_type: "scheduled_transaction", ... }`. |
 | `create_transaction` | Write tool: create a transaction with optional split (subtransactions must sum to total). For a transfer (including a credit card payment) pass `transferToAccountId` or `transferToAccountName` instead of a payee; the server resolves the destination account's internal transfer payee, since YNAB rejects a literal `Transfer -- …` payee name. |
@@ -485,7 +466,7 @@ Read tools are available by default. Tools that create, update, import, or delet
 |------|-------------|
 | `preview_write_tool` | Read fresh before-state and exact proposed write intent; returns a five-minute single-use session-bound token. Separate user approval is required. |
 | `suggest_transaction_categories` | Read-only payee-history/recency/schedule suggestions with confidence/evidence and uncertainty/split abstention; never auto-applies. |
-| `review_unapproved` | Get unapproved transactions grouped by readiness: "ready to approve" (categorized, split, or transfer) vs. "needs category first" (uncategorized). Each transaction includes a `flags` array highlighting anomalies (manually_entered, match_broken, no_prior_amount_match, category_drift, new_payee, scheduled_transaction_realized) computed against 60 days of payee history. Group headers report `category_names` / `mixed_categories` and, when the rows run both directions, `inflow_total` / `outflow_total` beside the net `total`. Includes a warning against blind approval. Pass `summary: true` for counts + by-payee aggregates only, or `compact: true` to keep per-transaction rows (with IDs) while dropping bulky fields so the response fits inline, `match_broken` rows keep `matched_transaction_id` in compact mode, since triaging that flag means looking the matched id up. Above `maxTransactions` unapproved rows (default 400) a full response degrades to `compact`, and above twice that to `summary`; the response reports `mode` and a `notice`. |
+| `review_unapproved` | Get unapproved transactions grouped by readiness: "ready to approve" (categorized, split, or transfer) vs. "needs category first" (uncategorized). Each transaction includes a `flags` array highlighting anomalies (manually_entered, match_broken, no_prior_amount_match, category_drift, new_payee, scheduled_transaction_realized) computed against 60 days of payee history. Default rows are compact (ids, names, dates, dollar amounts, cleared/approved, flags). Pass `verbose: true` for the full row, including memo and import fields. Group headers report `category_names` / `mixed_categories` and, when the rows run both directions, `inflow_total` / `outflow_total` beside the net `total`. Includes a warning against blind approval. Pass `summary: true` for counts + by-payee aggregates only, or `compact: true` to keep a smaller per-transaction row (with IDs) while dropping bulky fields so the response fits inline, `match_broken` rows keep `matched_transaction_id` in compact mode, since triaging that flag means looking the matched id up. Above `maxTransactions` unapproved rows (default 400) a full response degrades to `compact`, and above twice that to `summary`; the response reports `mode` and a `notice`. |
 | `get_overspent_categories` | Get categories with negative balances for a month, useful for finding prior-month overspending that reduces the current month's Ready to Assign. |
 
 ### Workflows (v4.0)
@@ -533,9 +514,9 @@ Pass `matched_transaction_id` values from `review_unapproved` (including compact
 
 ### Write Tool Opt-In
 
-The server starts in read-only mode. Write tools are not merely discouraged; they are absent from `listTools` unless `YNAB_ALLOW_WRITES=1` is present when the MCP process starts. This mirrors the safer hosted-connector pattern: the default permission set can inspect budgets, transactions, categories, payees, months, and scheduled transactions, but it cannot mutate financial data.
+The server starts in the read-only profile. Write tools are absent from `listTools` unless the process starts with a write profile: `YNAB_ALLOW_WRITES=1`, `YNAB_TOOL_PROFILE=write`, or `--profile write`. This mirrors the safer hosted-connector pattern: the default permission set can inspect budgets, transactions, categories, payees, months, and scheduled transactions, but it cannot mutate financial data.
 
-If a client already has the process running, changing the environment is not enough. Restart the MCP server after setting or clearing `YNAB_ALLOW_WRITES`.
+If a client already has the process running, changing the environment or flag is not enough. Restart the MCP server after setting or clearing the write profile.
 
 Call the read-only `preview_write_tool` with a concrete write tool and its input:
 
@@ -570,7 +551,7 @@ manual reconciliation. See [recovery limits](docs/write-recovery.md).
 
 ### Read freshness and projections
 
-Transaction, account, category, payee and schedule lists accept `projection: "lean" | "full"`, `freshness: "fresh" | "cached"` and `includeFreshness`. Fresh is the default. Explicit caching uses tenant/session/budget-isolated merged entities and a 30-second TTL. Transaction metadata reports the exact `history_since` boundary; an older requested date expands the baseline, and `complete` applies to the reported coverage. Caller deltas never seed the merged baseline. Writes invalidate the cache even after response loss. See [read-cache details](docs/read-cache.md).
+Transaction, account, category, payee and schedule lists accept `projection: "lean" | "full"`, `freshness: "fresh" | "cached"` and `includeFreshness`. Fresh is the default. `review_unapproved`, `get_transactions`, `list_accounts`, `list_categories`, and `get_month` also accept `verbose` (default `false`). Omit it for the compact field set. Set `verbose: true` to get the full payload those tools returned before compact defaults, including whatever `projection` you asked for. Explicit caching uses tenant/session/budget-isolated merged entities and a 30-second TTL. Transaction metadata reports the exact `history_since` boundary; an older requested date expands the baseline, and `complete` applies to the reported coverage. Caller deltas never seed the merged baseline. Writes invalidate the cache even after response loss. See [read-cache details](docs/read-cache.md).
 
 ### Batch Updates
 
@@ -625,7 +606,8 @@ Manual YNAB transfer fixes can replace one side of the pair with a new transacti
 | `YNAB_API_TOKEN` | Yes* | (none) | [Personal access token](https://app.ynab.com/settings/developer) from YNAB Developer Settings. Read from process env first, then supported Codex and Claude plaintext agent settings. |
 | `YNAB_API_TOKEN_FILE` | No | (none) | Path to a file containing only the token. The file must be 4 KB or smaller. Used only when `YNAB_API_TOKEN` is unset, and can be provided through process env or agent settings. |
 | `YNAB_BUDGET_ID` | No | `last-used` | Default budget ID. If omitted, tools use YNAB's most recently accessed budget. Run `list_budgets` to find IDs. |
-| `YNAB_ALLOW_WRITES` | No | read-only | Set to `1` to register write tools. Any other value keeps the server read-only. |
+| `YNAB_ALLOW_WRITES` | No | read-only | Set to `1` to register write tools. Any other value keeps the server read-only. Same gate as the write profile. |
+| `YNAB_TOOL_PROFILE` | No | `read` | Set to `write` to register write tools. `read` or any other value leaves writes off unless `YNAB_ALLOW_WRITES=1` or `--profile write` is also set. |
 | `YNAB_OP_PATH` | No | (none) | 1Password secret reference for your API token. Used only if no direct token is configured. Can be provided through process env or agent settings. |
 | `YNAB_DISABLE_AGENT_CONFIG_FALLBACK` | No | `0` | Set to `1` to stop the server from reading `~/.codex/config.toml` and `~/.claude/settings.json`. Intended for tests and tightly controlled runtimes. |
 | `YNAB_RATE_LIMIT_PER_HOUR` | No | `190` | Client-side rate limiter. Set to `0` to disable for controlled tests. |
@@ -772,7 +754,7 @@ Use `YNAB_TEST_BUDGET_ID` to target a dedicated test budget without changing you
 
 Every live write in `npm test` and `smoke:batch-verify`, including cleanup or restoration, displays a fresh exact preview and requires you to type `yes` in an interactive terminal. Environment flags only expose tools; they do not approve writes. Without a terminal, write calls fail before execution while read calls remain available. If cleanup is declined or a preview becomes stale, inspect the reported test transaction in YNAB. Pending bank imports cannot be previewed exactly and must be performed in YNAB.
 
-Tests cover all tool categories: reads, reversible writes, bulk operations, search, split transactions, scheduled transaction CRUD with fetch-then-merge verification, money movements, and payee locations.
+Tests cover all tool categories: reads, reversible writes, bulk operations, search, split transactions, and scheduled transaction CRUD with fetch-then-merge verification.
 
 ### MCP Smoke Tests
 

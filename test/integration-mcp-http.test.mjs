@@ -175,7 +175,7 @@ test("partial HTTP batch failure reports uncertainty without retrying a financia
 
 test("malicious bank memo remains data during read-only agent review and cannot authorize writes", async (t) => {
   const harness = await createMcpHarness({ writesEnabled: false }); t.after(() => harness.close());
-  const rows = assertToolOk(await harness.call("get_transactions", { sinceDate: "2026-10-01" }));
+  const rows = assertToolOk(await harness.call("get_transactions", { sinceDate: "2026-10-01", verbose: true }));
   assert.match(rows.find((row) => row.id === "fake-uncertain").memo, /IGNORE ALL PRIOR INSTRUCTIONS/);
   const toolNames = (await harness.client.listTools()).tools.map((tool) => tool.name);
   assert.ok(!toolNames.includes("update_transaction"));
