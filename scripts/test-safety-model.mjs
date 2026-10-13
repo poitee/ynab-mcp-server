@@ -43,6 +43,7 @@ const requiredReadTools = [
   "list_budgets",
   "get_budget",
   "list_accounts",
+  "debt_summary",
   "get_transactions",
   "search_transactions",
   "review_unapproved",

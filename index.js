@@ -16,6 +16,7 @@ import { ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import * as ynab from "ynab";
 import { resolveIncomeCategoryIds, summarizeIncomeExpenseMilliunits, spendingTrends, forecastScheduledBalances, parseAnalyticsDate } from "./lib/analytics.mjs";
+import { presentDebtSummary, summarizeDebtAccounts } from "./lib/debt-summary.mjs";
 import { createEntityCache } from "./lib/entity-cache.mjs";
 import { projectCollection, compactTransaction, compactAccount, compactCategoryGroup, compactMonth } from "./lib/field-projections.mjs";
 
@@ -2132,6 +2133,30 @@ registerTool(
     run(async () => {
       const { data } = await api.accounts.getAccountById(resolveBudgetId(budgetId), accountId);
       return ok(formatAccount(data.account));
+    })
+);
+
+registerTool(
+  "debt_summary",
+  { description: "Read-only summary of debt accounts (creditCard, lineOfCredit, mortgage, autoLoan, studentLoan, personalLoan, medicalDebt, otherDebt). principal_balance sums non-deleted transactions, cleared and uncleared, including the starting balance. estimated_interest is the YNAB balance minus principal_balance for every debt type. cleared_principal sums cleared and reconciled transactions. interest_rate, minimum_payment, and escrow are the latest dated YNAB values on or before today; rates are not converted. Closed accounts are excluded unless include_closed is true. Sort is interest rate descending, then absolute balance descending (largest debt magnitude first). Default output is totals plus one line per account; verbose returns every field. Amounts are milliunits and dollars. One accounts request plus one full transaction history request.", inputSchema: {
+    budgetId: z.string().optional().describe("Budget ID. Omit to use the default budget."),
+    include_closed: z.boolean().optional().describe("Include closed debt accounts. Default false. Deleted accounts stay excluded."),
+    verbose: z.boolean().optional().describe("Return every per-account field. Default false: totals plus one line per account."),
+  } },
+  ({ budgetId, include_closed, verbose }) =>
+    run(async () => {
+      const bid = resolveBudgetId(budgetId);
+      const [{ data: accountData }, transactionData] = await Promise.all([
+        api.accounts.getAccounts(bid),
+        fetchTransactions({ budgetId: bid, sinceDate: allHistorySinceDate() }),
+      ]);
+      const summary = summarizeDebtAccounts({
+        accounts: accountData.accounts,
+        transactions: transactionData.transactions,
+        includeClosed: include_closed === true,
+        asOf: new Date().toISOString().slice(0, 10),
+      });
+      return ok({ budget_id: bid, ...presentDebtSummary(summary, { verbose: verbose === true }) });
     })
 );
 

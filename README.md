@@ -10,10 +10,10 @@
 </p>
 
 <p align="center">
-  <code>60 tools + 4 discovery helpers</code> &bull;
+  <code>61 tools + 4 discovery helpers</code> &bull;
   <code>6 guided prompts</code> &bull;
   <code>undo journal</code> &bull;
-  <code>38 read-only operations by default</code> &bull;
+  <code>39 read-only operations by default</code> &bull;
   <code>read-only by default</code>
 </p>
 
@@ -319,6 +319,7 @@ YNAB_API_TOKEN=your-token-here npm run smoke:review-unapproved -- --published
 | "What subscriptions am I actually paying for?" | `detect_recurring_charges` finds payee + amount + cadence patterns with annual cost |
 | "How am I doing financially?" | `get_budget_health` scores savings rate, age of money, and overspending green/yellow/red |
 | "Are my credit card payments fully funded?" | `audit_credit_card_payments` compares card balances to payment categories |
+| "How much debt do I have, and how much of it is interest?" | `debt_summary` sums debt-account principal from the register and reports the gap versus the YNAB balance |
 | "Merge my duplicate coffee categories" | `merge_category` moves transactions and budgets in one confirmed call |
 | "Split that Costco charge across three categories" | `prepare_split_for_matching` mirrors the imported transaction for UI matching |
 | "Undo that last batch approval" | `list_undo_history` → `undo_operation` restores the journaled before-state |
@@ -328,12 +329,12 @@ YNAB_API_TOKEN=your-token-here npm run smoke:review-unapproved -- --published
 
 ## Features
 
-The source defines 60 tools for the YNAB v1 REST API and four discovery helpers, for 64 registered MCP operations. Read-only mode exposes 35 YNAB operations and three helpers. Enabling the write profile adds 25 YNAB operations and the write-execution helper. The server also defines MCP prompts and resources:
+The source defines 61 tools for the YNAB v1 REST API and four discovery helpers, for 65 registered MCP operations. Read-only mode exposes 36 YNAB operations and three helpers. Enabling the write profile adds 25 YNAB operations and the write-execution helper. The server also defines MCP prompts and resources:
 
 | Resource | Tools | Capabilities |
 |----------|-------|-------------|
 | **Budgets** | 4 | List, view details, settings |
-| **Accounts** | 3 | List, view, create |
+| **Accounts** | 4 | List, view, create, debt summary |
 | **Categories** | 9 | Create and update categories/groups, search, goals, monthly budgets |
 | **Payees** | 5 | List, view, create, rename, search |
 | **Months** | 2 | Monthly summaries with per-category breakdown |
@@ -354,7 +355,7 @@ Beyond tools, the server ships **6 MCP prompts** (guided workflows: monthly revi
 - **Compact reads** - `review_unapproved`, `get_transactions`, `list_accounts`, `list_categories`, and `get_month` return ids, names, dates, dollar amounts, payee and category names, cleared/approved, and balances. Null, deleted, and redundant fields are omitted. Pass `verbose: true` for the previous full payload, including memos and raw bank payee text on transactions.
 - **Server instructions and structured contracts** - the server sends a compact `instructions` block at initialize (dollar amounts, `search_transactions` before unfiltered pulls, `transactionId`, the transfer convenience, write-safety rules), so clients that never open a prompt or resource still get the rules that matter. Every tool exposes a human-readable title, an input schema even when it takes no arguments, a minimal output schema, and matching `structuredContent`. Impact hints describe YNAB as a private, bounded system so app clients can distinguish reads, writes, and destructive operations accurately.
 - **Exact write previews and confirmation** - every write requires a session-bound single-use preview token and `confirmed: true` after explicit user approval. Bulk-filter writes also support `expectedMatchedCount` as an additional guard.
-- **Dollar amounts everywhere** - inputs and outputs are in dollars (`-12.34`), never milliunits (`-12340`). Conversion is automatic and transparent.
+- **Dollar amounts everywhere** - inputs and outputs are in dollars (`-12.34`), never milliunits (`-12340`), except `debt_summary`, which reports each amount as milliunits and dollars. Conversion is automatic and transparent.
 - **Smart budget resolution** - set `YNAB_BUDGET_ID` for a default, or omit it to auto-resolve to your last-used budget. Every tool accepts an optional `budgetId` override.
 - **Pinned YNAB host** - all HTTP requests are restricted to `https://api.ynab.com`, redirects are not followed, and API tokens are redacted from surfaced errors.
 - **Agent-aware token fallback** - use direct process env, Codex `~/.codex/config.toml`, Claude `~/.claude/settings.json`, a small token file via `YNAB_API_TOKEN_FILE`, or a 1Password CLI reference via `YNAB_OP_PATH`.
@@ -397,6 +398,7 @@ Read tools are available by default. Tools that create, update, import, or delet
 |------|-------------|
 | `list_accounts` | List accounts with id, name, type, on-budget/closed status, and dollar balances. Pass `verbose: true` for debt, import, reconciliation, and deleted fields. |
 | `get_account` | Get full account details including notes and debt fields |
+| `debt_summary` | Read-only summary of credit cards, lines of credit, mortgages, and other debt accounts. Principal is the sum of non-deleted transactions; estimated interest is the YNAB balance minus that sum. Closed accounts are omitted unless `include_closed` is true. Pass `verbose: true` for rates, minimum payments, escrow, and the last payment. Default output is totals plus one line per account. |
 | `create_account` | Write tool: create a new account (checking, savings, creditCard, mortgage, etc.) |
 
 **Supported account types:** `checking`, `savings`, `cash`, `creditCard`, `lineOfCredit`, `otherAsset`, `otherLiability`, `mortgage`, `autoLoan`, `studentLoan`, `personalLoan`, `medicalDebt`, `otherDebt`
