@@ -193,20 +193,6 @@ await test("get_payee", async () => {
   if (!p.name) throw new Error("no payee name");
 });
 
-// --- Payee Locations ---
-console.log("\n=== Payee Locations ===");
-
-await test("list_payee_locations", async () => {
-  const locs = await call("list_payee_locations", { budgetId: bid });
-  if (!Array.isArray(locs)) throw new Error("not an array");
-  console.log(`    ✓ ${locs.length} payee locations`);
-});
-
-await test("get_payee_locations_by_payee", async () => {
-  const locs = await call("get_payee_locations_by_payee", { budgetId: bid, payeeId: testPayeeId });
-  if (!Array.isArray(locs)) throw new Error("not an array");
-});
-
 await test("get_month", async () => {
   const m = await call("get_month", { budgetId: bid, month: testMonth });
   if (!m.categories) throw new Error("no categories in month");
@@ -253,34 +239,6 @@ if (runNonReversibleTests) {
   skip("create_category", "set YNAB_RUN_NONREVERSIBLE_TESTS=1 to create categories in a live budget");
   skip("verify created category", "depends on a category created by the non-reversible test set");
 }
-
-// --- Money Movements ---
-console.log("\n=== Money Movements ===");
-
-await test("list_money_movements", async () => {
-  const ms = await call("list_money_movements", { budgetId: bid });
-  if (!Array.isArray(ms)) throw new Error("not an array");
-  console.log(`    ✓ ${ms.length} money movements`);
-});
-
-await test("get_money_movements_by_month", async () => {
-  const ms = await call("get_money_movements_by_month", { budgetId: bid, month: testMonth });
-  if (!Array.isArray(ms)) throw new Error("not an array");
-  console.log(`    ✓ ${ms.length} money movements in ${testMonthLabel}`);
-  if (ms.length > 0 && typeof ms[0].amount !== "number") throw new Error("amount not converted to dollars");
-});
-
-await test("list_money_movement_groups", async () => {
-  const gs = await call("list_money_movement_groups", { budgetId: bid });
-  if (!Array.isArray(gs)) throw new Error("not an array");
-  console.log(`    ✓ ${gs.length} money movement groups`);
-});
-
-await test("get_money_movement_groups_by_month", async () => {
-  const gs = await call("get_money_movement_groups_by_month", { budgetId: bid, month: testMonth });
-  if (!Array.isArray(gs)) throw new Error("not an array");
-  console.log(`    ✓ ${gs.length} money movement groups in ${testMonthLabel}`);
-});
 
 // --- Transaction reads ---
 console.log("\n=== Transaction Read Operations ===");

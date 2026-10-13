@@ -65,7 +65,7 @@ test("MCP previews read freshly and real writes invalidate a retained stale cach
   const written = assertToolOk(await h.call("update_transaction", { ...args, previewToken, confirmed: true }));
   assert.equal(written.amount, -25);
   assert.equal(h.instance.internals.entityCache.size, 0);
-  const fresh = assertToolOk(await h.call("get_transactions", { freshness: "cached" }));
+  const fresh = assertToolOk(await h.call("get_transactions", { freshness: "cached", verbose: true }));
   assert.equal(fresh.freshness.source, "network");
   const row = fresh.transactions.find((item) => item.id === "fake-import");
   assert.equal(row.amount, -25);
@@ -81,7 +81,7 @@ test("MCP applied-write response disconnect clears cache without replaying the w
   h.fake.injectFault({ method: "PUT", path: "/transactions/fake-import", afterApply: true, mode: "body-disconnect" });
   await h.call("update_transaction", { ...args, previewToken, confirmed: true });
   assert.equal(h.instance.internals.entityCache.size, 0);
-  const reread = assertToolOk(await h.call("get_transactions", { freshness: "cached" }));
+  const reread = assertToolOk(await h.call("get_transactions", { freshness: "cached", verbose: true }));
   assert.equal(reread.transactions.find((row) => row.id === "fake-import").memo, args.memo);
   assert.equal(reread.freshness.source, "network");
   assert.equal(h.fake.writes().length, 1);
